@@ -1,11 +1,12 @@
 """
-Authentication controller
+Authentication controller with flask_oidc support
 """
 from datetime import datetime, timedelta
 from random import choice
 from string import ascii_letters, digits
 
-from flask import Blueprint, current_app, jsonify, request, session
+from flask import Blueprint, current_app, jsonify, request, session, redirect, url_for
+from flask_oidc import OpenIDConnect
 from jsonschema import ValidationError, validate
 
 from strelka_ui.database import db
@@ -13,6 +14,9 @@ from strelka_ui.models import ApiKey, User
 from strelka_ui.services.auth import auth_required, check_credentials
 
 auth = Blueprint("auth", __name__, url_prefix="/auth")
+
+# Initialize OpenIDConnect
+oidc = OpenIDConnect()
 
 loginSchema = {
     "type": "object",
@@ -23,6 +27,9 @@ loginSchema = {
     "required": ["username", "password"],
 }
 
+def init_app(app):
+    """Initialize OpenIDConnect with the Flask app"""
+    oidc.init_app(app)
 
 @auth.route("/apikey", methods=["GET"])
 @auth_required
@@ -48,21 +55,29 @@ def get_api_key(user):
 
 
 @auth.route("/logout")
+@oidc.require_login
 def logout():
     """Clears user session and returns logout message"""
     session.clear()
+    if current_app.config.get("ENABLE_OPENID", False):
+        oidc.logout()
     return jsonify({"message": "successfully logged out"}), 200
 
 
-@auth.route("/login", methods=["POST"])
+@auth.route("/login", methods=["GET", "POST"])
 def login():
     """Login handler to authenticate and create user session"""
+    if request.method == "GET" and current_app.config.get("ENABLE_OPENID", False):
+        return redirect(url_for("auth.oidc_login"))
+
+    # Existing username/password authentication
     username = request.form.get("username")
     password = request.form.get("password")
 
     try:
         validate(
-            instance={"username": username, "password": password}, schema=loginSchema
+            instance={"username": username, "password": password},
+            schema=loginSchema
         )
     except ValidationError as err:
         # current_app.logger.error("Failed login validation: %s", err)
@@ -73,10 +88,28 @@ def login():
     if not success:
         return jsonify({"error": "incorrect username/password combination"}), 401
 
-    # current_app.logger.info("ldap auth suceeded for user %s", ldapUser["user_cn"])
-    session["user_cn"] = ldapUser["user_cn"]
-    session["first_name"] = ldapUser["first_name"]
-    session["last_name"] = ldapUser["last_name"]
+    return process_login(ldapUser)
+
+@auth.route("/oidc-login")
+@oidc.require_login
+def oidc_login():
+    """Handle OpenID Connect login"""
+    if not current_app.config.get("ENABLE_OPENID", False):
+        return jsonify({"error": "OpenID authentication not enabled"}), 400
+
+    info = oidc.user_getinfo(['sub', 'given_name', 'family_name'])
+    user_data = {
+        "user_cn": info.get("sub"),
+        "first_name": info.get("given_name", ""),
+        "last_name": info.get("family_name", ""),
+    }
+    return process_login(user_data)
+
+def process_login(user_data):
+    """Common login processing for both auth methods"""
+    session["user_cn"] = user_data["user_cn"]
+    session["first_name"] = user_data["first_name"]
+    session["last_name"] = user_data["last_name"]
 
     # upsert the user record with the new last logged in time
     try:

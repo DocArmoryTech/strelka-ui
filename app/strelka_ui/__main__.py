@@ -45,6 +45,9 @@ def create_app() -> Flask:
     CORS(app, supports_credentials=True)
     db.init_app(app)
 
+    # Initialize OpenID Connect
+    init_auth(app)  # Initialize the auth module including OpenID Connect
+
     # Initialize Flask-Migrate and associate it with the app
     migrate = Migrate(app, db)
 

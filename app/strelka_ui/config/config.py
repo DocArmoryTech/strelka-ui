@@ -59,6 +59,15 @@ class Config(object):
         "LDAP_ATTRIBUTE_MEMBER_REQUIREMENT_FIELD", "*"
     )
 
+    # OpenID Connect Configuration
+    ENABLE_OPENID = os.environ.get("ENABLE_OPENID", "False").lower() == "true"
+    OIDC_CLIENT_SECRETS = os.environ.get("OIDC_CLIENT_SECRETS", "client_secrets.json")
+    OIDC_ID_TOKEN_COOKIE_SECURE = os.environ.get("OIDC_ID_TOKEN_COOKIE_SECURE", "False").lower() == "true"
+    OIDC_USER_INFO_ENABLED = True
+    OIDC_OPENID_REALM = os.environ.get("OIDC_OPENID_REALM", "strelka")
+    OIDC_SCOPES = os.environ.get("OIDC_SCOPES", "openid,email,profile").split(",")
+    OIDC_INTROSPECTION_AUTH_METHOD = os.environ.get("OIDC_INTROSPECTION_AUTH_METHOD", "client_secret_post")
+
     # Formatted for ease of use with flask-sqlalchemy
     SQLALCHEMY_DATABASE_URI = f"postgresql://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_DBNAME}"
 
@@ -66,11 +75,14 @@ class Config(object):
 class ProductionConfig(Config):
     UPLOAD_FOLDER = "/opt"
     STATIC_ASSET_FOLDER = "react-app"
+    OIDC_ID_TOKEN_COOKIE_SECURE = True  # Secure cookies in production
 
 
 class DevelopmentConfig(Config):
     DEBUG = True
+    OIDC_ID_TOKEN_COOKIE_SECURE = False  # Insecure cookies okay for development
 
 
 class TestingConfig(Config):
     TESTING = True
+    OIDC_ID_TOKEN_COOKIE_SECURE = False
